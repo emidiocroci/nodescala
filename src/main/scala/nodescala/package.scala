@@ -5,6 +5,7 @@ import scala.concurrent._
 import scala.concurrent.duration._
 import ExecutionContext.Implicits.global
 import scala.async.Async.{async, await}
+import scala.collection.mutable.ListBuffer
 
 /** Contains basic data types, data structures and `Future` extensions.
  */
@@ -36,7 +37,28 @@ package object nodescala {
      *  The values in the list are in the same order as corresponding futures `fs`.
      *  If any of the futures `fs` fails, the resulting future also fails.
      */
-    def all[T](fs: List[Future[T]]): Future[List[T]] = ???
+    def all[T](fs: List[Future[T]]): Future[List[T]] = {
+      def helper(fl: List[Future[T]], acc: List[T]): Future[List[T]] = 
+        fl match {
+          case Nil => {
+            val p = Promise[List[T]]
+            p complete Try(acc)
+            p.future
+          }
+          case x::xs => {
+            x onComplete { 
+              case Success(y) => helper(xs, y :: acc)
+              case Failure(err) => {
+                val p = Promise[List[T]]
+                p failure err
+                p.future
+              }
+            }
+          }
+        }
+
+      helper(fs, Nil)
+    }
 
     /** Given a list of futures `fs`, returns the future holding the value of the future from `fs` that completed first.
      *  If the first completing future in `fs` fails, then the result is failed as well.
@@ -47,7 +69,13 @@ package object nodescala {
      *
      *  may return a `Future` succeeded with `1`, `2` or failed with an `Exception`.
      */
-    def any[T](fs: List[Future[T]]): Future[T] = ???
+    def any[T](fs: List[Future[T]]): Future[T] = {
+      val p = Promise[T]
+      fs.foreach(f => {
+        f onComplete { p.tryComplete(_)}
+        })
+      p.future
+    }
 
     /** Returns a future with a unit value that is completed after time `t`.
      */
